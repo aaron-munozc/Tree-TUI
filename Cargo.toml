@@ -1,0 +1,25 @@
+[package]
+name = "tree-tui"
+description = "TUI directory visualizer."
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+color-eyre = "0.6.5"
+ratatui = "0.30.2"
+clap = { version = "4.6.1", features = ["derive"] }
+
+tui-input = "0.15.3"
+arboard = "3.6.1"
+ignore = "0.4.26"
+directories = "6.0.0"
+glob = "0.3.3"
+serde = { version = "1.0.228", features = ["derive"] }
+toml = "1.0.6"
+
+
+[profile.release]
+codegen-units = 1 # Allows compiler to perform better optimization.
+lto = true # Enables Link-time Optimization.
+opt-level = "s" # Prioritizes small binary size. Use `3` if you prefer speed.
+strip = true # Ensures debug symbols are removed.

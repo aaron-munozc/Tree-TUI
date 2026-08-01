@@ -1,0 +1,35 @@
+mod app;
+mod core;
+mod ui;
+
+use clap::Parser;
+use color_eyre::Result;
+
+#[derive(Parser, Debug)]
+#[command(
+    author,
+    version,
+    about = "Tree with native Ratatui theme editor and formatting"
+)]
+pub struct Cli {
+    #[arg(short, long)]
+    depth: Option<usize>,
+    #[arg(long)]
+    no_clipboard: bool,
+    #[arg(long)]
+    no_ignore: bool,
+}
+
+fn main() -> Result<()> {
+    color_eyre::install()?;
+    let cli = Cli::parse();
+
+    let mut terminal = ratatui::init();
+
+    let mut app = app::App::new(cli);
+    let app_result = app.run(&mut terminal);
+
+    ratatui::restore();
+
+    app_result
+}
