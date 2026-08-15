@@ -42,44 +42,64 @@ The program will be located at `./target/release/tree-tui`.
 Run the program in your terminal. You can use different flags to change how it works:
 
 ```bash
-tree-tui                 # View the current folder
-tree-tui --depth 3       # Stop looking after 3 folders deep[cite: 3]
-tree-tui --no-ignore     # Show files that are usually hidden by .gitignore[cite: 3]
-tree-tui --no-clipboard  # Disable the clipboard feature[cite: 3]
+tree-tui                  # View the current folder
+tree-tui --depth 3        # Stop looking after 3 folders deep
+tree-tui --no-ignore      # Show files that are usually hidden by .gitignore
+tree-tui --no-clipboard   # Disable the clipboard feature
+tree-tui --sort-mode size # Sort items by size (options: name, extension, size, modified)
+tree-tui --max-entries 5  # Limit files shown per folder to 5 (folders are always shown)
 
 ```
+
+### Available Flags
+
+* **`-d, --depth <NUM>`**: Limit the depth of the directory tree displayed.
+
+
+* **`--no-ignore`**: Include files and directories typically ignored by `.gitignore`.
+
+
+* **`--no-clipboard`**: Disable copying the tree output to the clipboard.
+
+
+* **`-s, --sort-mode <MODE>`**: Change how files and directories are sorted. Available options are `name`, `extension`, `size`, and `modified`.
+
+
+* **`-m, --max-entries <NUM>`**: Restrict the number of files displayed per directory. Directories are completely exempt from this limit to ensure your structural tree remains visible.
+
+
 
 ### Key Bindings
 
 #### Main Tree View
 
-| Key                       | Action                                   |
-|---------------------------|------------------------------------------|
-| `t`                       | Open the theme menu.                     |
-| `c`                       | Copy the current tree to your clipboard. |
-| `j` / `k` / `Up` / `Down` | Move up and down the list.               |
-| `PageUp` / `PageDown`     | Scroll the list by 15 items.             |
-| `q`                       | Close the program.                       |
+| Key | Action |
+| --- | --- |
+| `t` | Open the theme menu. |
+| `c` | Copy the current tree to your clipboard. |
+| `j` / `k` / `Up` / `Down` | Move up and down the list. |
+| `PageUp` / `PageDown` | Scroll the list by 15 items. |
+| `q` | Close the program. |
 
 #### Theme Menu
 
-| Key                       | Action                         |
-|---------------------------|--------------------------------|
-| `Enter` / `e`             | Open the theme editor.         |
-| `a`                       | Apply the selected theme.      |
-| `j` / `k` / `Up` / `Down` | Move up and down the list.     |
-| `q` / `Esc`               | Go back to the main tree view. |
+| Key | Action |
+| --- | --- |
+| `Enter` / `e` | Open the theme editor. |
+| `a` | Apply the selected theme. |
+| `j` / `k` / `Up` / `Down` | Move up and down the list. |
+| `q` / `Esc` | Go back to the main tree view. |
 
 #### Theme Editor
 
-| Key                   | Action                                                |
-|-----------------------|-------------------------------------------------------|
-| `Up` / `Down` / `Tab` | Move between input fields.                            |
-| `Enter`               | Open dropdown menus for targets and animation styles. |
-| `Ctrl + N`            | Add a new rule.                                       |
-| `Ctrl + D`            | Delete the current rule.                              |
-| `Ctrl + S`            | Save your changes and apply them.                     |
-| `Esc`                 | Go back to the theme menu.                            |
+| Key | Action |
+| --- | --- |
+| `Up` / `Down` / `Tab` | Move between input fields. |
+| `Enter` | Open dropdown menus for targets and animation styles. |
+| `Ctrl + N` | Add a new rule. |
+| `Ctrl + D` | Delete the current rule. |
+| `Ctrl + S` | Save your changes and apply them. |
+| `Esc` | Go back to the theme menu. |
 
 ---
 
@@ -97,5 +117,7 @@ colors = "#F38BA8, #E10098"
 icon = "rs"
 anim_speed = 2.0
 anim_easing = "sine"
+
+```
 
 ```
