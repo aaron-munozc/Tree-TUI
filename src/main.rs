@@ -5,6 +5,8 @@ mod ui;
 use clap::Parser;
 use color_eyre::Result;
 
+use crate::core::SortMode;
+
 #[derive(Parser, Debug)]
 #[command(
     author,
@@ -18,6 +20,10 @@ pub struct Cli {
     no_clipboard: bool,
     #[arg(long)]
     no_ignore: bool,
+    #[arg(long, short, value_enum, default_value_t = SortMode::Name)]
+    pub sort_mode: SortMode,
+    #[arg(short, long)]
+    pub max_entries: Option<usize>,
 }
 
 fn main() -> Result<()> {

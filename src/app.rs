@@ -116,7 +116,13 @@ impl App {
             .unwrap_or_default();
         let runtime_theme = active_theme.to_runtime();
 
-        let mut tree_items = collect_tree(".", cli.depth, cli.no_ignore);
+        let mut tree_items = collect_tree(
+            ".",
+            cli.depth,
+            cli.no_ignore,
+            &cli.sort_mode,
+            cli.max_entries,
+        );
         apply_theme_to_tree(&mut tree_items, &runtime_theme);
 
         let mut tree_state = ListState::default();

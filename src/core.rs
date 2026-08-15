@@ -1,13 +1,34 @@
 use arboard::Clipboard;
+use clap::ValueEnum;
 use directories::ProjectDirs;
 use glob::Pattern;
 use ignore::WalkBuilder;
 use ratatui::style::Color;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 // --- ENUMS & TYPES ---
+#[derive(ValueEnum, Clone, Debug, PartialEq)]
+pub enum SortMode {
+    Name,
+    Extension,
+    Size,
+    Modified,
+}
+
+impl fmt::Display for SortMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Name => write!(f, "name"),
+            Self::Extension => write!(f, "extension"),
+            Self::Size => write!(f, "size"),
+            Self::Modified => write!(f, "modified"),
+        }
+    }
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 #[serde(rename_all = "PascalCase")]
@@ -496,7 +517,13 @@ pub struct TreeItem {
     pub cached_easing: Easing,
 }
 
-pub fn collect_tree(path: &str, depth_limit: Option<usize>, no_ignore: bool) -> Vec<TreeItem> {
+pub fn collect_tree(
+    path: &str,
+    depth_limit: Option<usize>,
+    no_ignore: bool,
+    sort_mode: &SortMode,
+    max_entries: Option<usize>,
+) -> Vec<TreeItem> {
     let mut builder = WalkBuilder::new(path);
     if no_ignore {
         builder.standard_filters(false);
@@ -505,24 +532,137 @@ pub fn collect_tree(path: &str, depth_limit: Option<usize>, no_ignore: bool) -> 
         builder.max_depth(Some(max));
     }
 
+    // 1. Sort entries inside each directory prior to traversing them
+    let mode = sort_mode.clone();
+    builder.sort_by_file_path(move |a, b| match mode {
+        SortMode::Name => a.file_name().cmp(&b.file_name()),
+        SortMode::Extension => {
+            let ext_a = a.extension();
+            let ext_b = b.extension();
+            ext_a
+                .cmp(&ext_b)
+                .then_with(|| a.file_name().cmp(&b.file_name()))
+        }
+        SortMode::Size => {
+            let size_a = std::fs::metadata(a).map(|m| m.len()).unwrap_or(0);
+            let size_b = std::fs::metadata(b).map(|m| m.len()).unwrap_or(0);
+            size_b
+                .cmp(&size_a)
+                .then_with(|| a.file_name().cmp(&b.file_name()))
+        }
+        SortMode::Modified => {
+            let time_a = std::fs::metadata(a)
+                .and_then(|m| m.modified())
+                .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+            let time_b = std::fs::metadata(b)
+                .and_then(|m| m.modified())
+                .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+            time_b
+                .cmp(&time_a)
+                .then_with(|| a.file_name().cmp(&b.file_name()))
+        }
+    });
+
     let entries: Vec<_> = builder.build().filter_map(Result::ok).collect();
-    let mut path_is_last = vec![false; 256];
+
+    // 2. Filter entries PER DIRECTORY
+    let mut filtered_entries = Vec::new();
+    let mut child_counts: HashMap<std::path::PathBuf, usize> = HashMap::new();
+    let mut omitted_counts: HashMap<std::path::PathBuf, usize> = HashMap::new();
+
+    for entry in entries {
+        let depth = entry.depth();
+        let path = entry.path().to_path_buf();
+
+        if depth == 0 {
+            filtered_entries.push(entry);
+            continue;
+        }
+
+        if let Some(parent) = path.parent().map(|p| p.to_path_buf()) {
+            let is_dir = entry.file_type().map_or(false, |f| f.is_dir());
+
+            if let Some(max) = max_entries {
+                // Exonerate folders: Only apply the max_entries limit to files
+                if !is_dir {
+                    let count = child_counts.entry(parent.clone()).or_insert(0);
+                    if *count >= max {
+                        *omitted_counts.entry(parent).or_insert(0) += 1;
+                        continue;
+                    }
+                    *count += 1;
+                }
+            }
+
+            filtered_entries.push(entry);
+        } else {
+            filtered_entries.push(entry);
+        }
+    }
+
+    // 3. Map to TreeItems and seamlessly inject "omitted" entries dynamically
+    let mut path_is_last = vec![false; 512];
     let mut items = Vec::new();
+    let mut stack: Vec<(std::path::PathBuf, usize)> = Vec::new();
 
-    for i in 0..entries.len() {
-        let depth = entries[i].depth();
-        let name = entries[i].file_name().to_string_lossy().into_owned();
-        let is_dir = entries[i].file_type().map(|f| f.is_dir()).unwrap_or(false);
+    for i in 0..filtered_entries.len() {
+        let entry = &filtered_entries[i];
+        let depth = entry.depth();
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let is_dir = entry.file_type().map(|f| f.is_dir()).unwrap_or(false);
+        let path = entry.path().to_path_buf();
+        let parent = path.parent().map(|p| p.to_path_buf());
 
+        // A. If the depth decreases, we are leaving a directory. Pop it and add its omitted text.
+        while let Some(&(ref top_path, top_depth)) = stack.last() {
+            if depth <= top_depth {
+                if let Some(&omit_count) = omitted_counts.get(top_path) {
+                    let omit_depth = top_depth + 1;
+                    if omit_depth < path_is_last.len() {
+                        path_is_last[omit_depth] = true; // The omitted node is ALWAYS the last child
+                    }
+                    let ancestor_is_last = if omit_depth > 1 {
+                        path_is_last[1..omit_depth].to_vec()
+                    } else {
+                        vec![]
+                    };
+                    items.push(TreeItem {
+                        name: format!("... {} omitted", omit_count),
+                        is_dir: false,
+                        depth: omit_depth,
+                        is_last: true,
+                        ancestor_is_last,
+                        cached_colors: vec![Color::Rgb(165, 173, 203)], // Muted Subtext color
+                        cached_icon: "⋯ ".to_string(),
+                        cached_speed: 0.0,
+                        cached_easing: Easing::Preset("linear".to_string()),
+                    });
+                }
+                stack.pop();
+            } else {
+                break;
+            }
+        }
+
+        // B. Calculate `is_last` for the current regular item
         let mut is_last = true;
-        for j in (i + 1)..entries.len() {
-            let next_depth = entries[j].depth();
+        for j in (i + 1)..filtered_entries.len() {
+            let next_depth = filtered_entries[j].depth();
             if next_depth < depth {
                 break;
             }
             if next_depth == depth {
                 is_last = false;
                 break;
+            }
+        }
+
+        // C. Crucial fix: If a parent has omitted files, the CURRENT regular child is NO LONGER the last child.
+        if is_last {
+            if let Some(p) = &parent {
+                if omitted_counts.contains_key(p) {
+                    is_last = false;
+                }
             }
         }
 
@@ -547,12 +687,48 @@ pub fn collect_tree(path: &str, depth_limit: Option<usize>, no_ignore: bool) -> 
             cached_speed: 1.0,
             cached_easing: Easing::Preset("linear".to_string()),
         });
+
+        if is_dir {
+            stack.push((path.clone(), depth));
+        }
     }
+
+    // 4. Drain any remaining directories in the stack at the end of the file tree
+    while let Some((top_path, top_depth)) = stack.pop() {
+        if let Some(&omit_count) = omitted_counts.get(&top_path) {
+            let omit_depth = top_depth + 1;
+            if omit_depth < path_is_last.len() {
+                path_is_last[omit_depth] = true;
+            }
+            let ancestor_is_last = if omit_depth > 1 {
+                path_is_last[1..omit_depth].to_vec()
+            } else {
+                vec![]
+            };
+            items.push(TreeItem {
+                name: format!("... {} omitted", omit_count),
+                is_dir: false,
+                depth: omit_depth,
+                is_last: true,
+                ancestor_is_last,
+                cached_colors: vec![Color::Rgb(165, 173, 203)],
+                cached_icon: "⋯ ".to_string(),
+                cached_speed: 0.0,
+                cached_easing: Easing::Preset("linear".to_string()),
+            });
+        }
+    }
+
     items
 }
 
 pub fn apply_theme_to_tree(items: &mut [TreeItem], theme: &RuntimeTheme) {
     for item in items.iter_mut() {
+        // Skip applying rule colours to our special omission items
+        if item.name.starts_with("... ") && item.name.ends_with(" omitted") {
+            continue;
+        }
+
         // 1. Assign defaults
         if item.is_dir {
             item.cached_colors = theme.dir_colors.clone();
